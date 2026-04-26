@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { useToast } from '../../../application/context/ToastContext'
 import { participanteRepo } from '../../../infrastructure/repositories'
 import { Btn, Input, Card } from '../../components/ui/index'
-import Icon from '../../components/ui/Icon'
 
 export default function StudentEnterPage() {
   const [numero, setNumero] = useState('')
@@ -40,9 +39,6 @@ export default function StudentEnterPage() {
           <Btn type="submit" disabled={loading} style={{width:'100%'}}>{loading?'Buscando...':'Ingresar'}</Btn>
         </form>
 
-        <div style={{marginTop:20}}>
-          <button onClick={()=>nav('/')} style={{background:'none',border:'none',color:'#6b7280',fontSize:13,textDecoration:'underline'}}>Volver al inicio</button>
-        </div>
       </Card>
       <Btn variant="ghost" onClick={() => {
         localStorage.setItem('tm_student', JSON.stringify({

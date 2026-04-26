@@ -40,13 +40,9 @@ export default function LoginPage() {
           <Btn type="submit" disabled={loading} style={{width:'100%',marginTop:8}}>{loading?'Ingresando...':'Ingresar'}</Btn>
         </form>
 
-        <div style={{textAlign:'center',marginTop:16}}>
-          <button onClick={()=>nav('/')} style={{background:'none',border:'none',color:'#6b7280',fontSize:13,textDecoration:'underline'}}>Volver al inicio</button>
-        </div>
       </Card>
       <Btn variant="ghost" onClick={() => {
         login('admin@ucundinamarca.edu.co', 'admin123').catch(() => {})
-        // Si no tienes backend, simula el usuario directamente:
         localStorage.setItem('tm_user', JSON.stringify({
           token: 'dev-token',
           nombre: 'Admin Dev',

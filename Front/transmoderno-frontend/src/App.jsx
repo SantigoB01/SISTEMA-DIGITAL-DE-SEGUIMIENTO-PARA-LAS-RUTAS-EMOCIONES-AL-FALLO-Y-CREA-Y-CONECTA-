@@ -2,7 +2,6 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './application/context/AuthContext'
 import { ToastProvider } from './application/context/ToastContext'
 
-import LandingPage from './presentation/pages/LandingPage'
 import LoginPage from './presentation/pages/LoginPage'
 import AdminLayout from './presentation/layouts/AdminLayout'
 import StudentLayout from './presentation/layouts/StudentLayout'
@@ -20,32 +19,29 @@ function ProtectedAdmin({ children }) {
 
 function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={<LoginPage />} />
+      <Routes>
+          <Route path="/" element={<LoginPage />} />
+          <Route path="/student/enter" element={<StudentEnterPage />} />
 
-      {/* Student routes — sin auth, identificación por número */}
-      <Route path="/student" element={<StudentLayout />}>
-        <Route path="home" element={<StudentHomePage />} />
-      </Route>
-      <Route path="/student/enter" element={<StudentEnterPage />} />
+          <Route path="/student" element={<StudentLayout />}>
+              <Route path="home" element={<StudentHomePage />} />
+          </Route>
 
-      {/* Admin routes — requiere login */}
-      <Route path="/admin" element={<ProtectedAdmin><AdminLayout /></ProtectedAdmin>}>
-        <Route index element={<Navigate to="participantes" replace />} />
-        <Route path="participantes" element={<ParticipantesPage />} />
-        <Route path="rutas" element={<RutasPage />} />
-        <Route path="sesiones" element={<SesionesPage />} />
-        <Route path="inscripciones" element={<InscripcionesPage />} />
-        <Route path="asistencia" element={<AsistenciaPage />} />
-        <Route path="fichas" element={<FichasPage />} />
-        <Route path="alertas" element={<AlertasPage />} />
-        <Route path="reportes" element={<ReportesPage />} />
-        <Route path="usuarios" element={<UsuariosPage />} />
-      </Route>
+          <Route path="/admin" element={<ProtectedAdmin><AdminLayout /></ProtectedAdmin>}>
+              <Route index element={<Navigate to="participantes" replace />} />
+              <Route path="participantes" element={<ParticipantesPage />} />
+              <Route path="rutas" element={<RutasPage />} />
+              <Route path="sesiones" element={<SesionesPage />} />
+              <Route path="inscripciones" element={<InscripcionesPage />} />
+              <Route path="asistencia" element={<AsistenciaPage />} />
+              <Route path="fichas" element={<FichasPage />} />
+              <Route path="alertas" element={<AlertasPage />} />
+              <Route path="reportes" element={<ReportesPage />} />
+              <Route path="usuarios" element={<UsuariosPage />} />
+          </Route>
 
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+          <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
   )
 }
 
