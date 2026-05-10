@@ -40,7 +40,7 @@ public class SecurityConfig {
         http
                 .cors(cors -> cors.configurationSource(request -> {
                     CorsConfiguration config = new CorsConfiguration();
-                    config.setAllowedOrigins(List.of("http://localhost:5173",
+                    config.setAllowedOrigins(List.of("http://localhost:3000","http://localhost:5173",
                             "http://192.168.10.12:5173"));
                     config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
                     config.setAllowedHeaders(List.of("*"));
@@ -92,7 +92,7 @@ public class SecurityConfig {
                 .map(usuario -> org.springframework.security.core.userdetails.User
                         .withUsername(usuario.getCorreo())
                         .password(usuario.getContrasena())
-                        .roles("ADMIN")
+                        .roles(usuario.getRol().name())
                         .build())
                 .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado: " + correo));
     }
