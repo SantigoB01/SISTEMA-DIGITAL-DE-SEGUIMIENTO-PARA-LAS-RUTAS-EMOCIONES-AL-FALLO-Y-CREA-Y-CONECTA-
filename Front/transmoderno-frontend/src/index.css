@@ -1,10 +1,54 @@
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'DM Sans',sans-serif;background:#f5f8f5;color:#111;-webkit-font-smoothing:antialiased}
-::-webkit-scrollbar{width:6px}
-::-webkit-scrollbar-thumb{background:#c8d8c8;border-radius:3px}
-@keyframes slideIn{from{transform:translateX(40px);opacity:0}to{transform:translateX(0);opacity:1}}
-@keyframes scaleIn{from{transform:scale(.95);opacity:0}to{transform:scale(1);opacity:1}}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
-button{cursor:pointer;font-family:inherit}
-button:hover{filter:brightness(.96)}
-a{text-decoration:none;color:inherit}
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:wght@600;700&display=swap');
+
+:root {
+  --gt-primary:       #0D5C2F;
+  --gt-primary-dark:  #0A3D1F;
+  --gt-primary-light: #E8F5ED;
+  --gt-bg:            #F0F4F1;
+  --gt-border:        #D4E2D8;
+  --gt-text:          #1A2318;
+  --gt-muted:         #627066;
+  --gt-accent:        #C8952A;
+  --gt-accent-light:  #FEF3DC;
+  --gt-success:       #16A34A;
+  --gt-danger:        #DC2626;
+  --gt-warn:          #D97706;
+  --gt-white:         #FFFFFF;
+  --gt-sidebar-w:     224px;
+  --gt-panel-w:       340px;
+  --gt-radius:        12px;
+  --gt-shadow-sm:     0 1px 4px rgba(0,0,0,.06);
+  --gt-shadow-md:     0 4px 16px rgba(0,0,0,.1);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  color: var(--gt-text);
+  background: var(--gt-bg);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--gt-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--gt-muted); }
+
+/* ── Animations ── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(100%); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.page-enter { animation: .25s ease-out fadeUp; }
+.slide-in   { animation: .2s ease-out slideIn; }

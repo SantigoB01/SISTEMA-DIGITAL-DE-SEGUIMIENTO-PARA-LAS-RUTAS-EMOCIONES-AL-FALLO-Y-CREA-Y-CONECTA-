@@ -202,8 +202,14 @@ export function useReportes() {
   const cases = uc.reporteUseCases(repos.reporteRepo)
   const run = useAction()
   return {
-    asistenciaSesiones: (rId, d, h) => run(() => cases.asistenciaSesiones(rId, d, h)),
-    asistenciaRuta: (rId) => run(() => cases.asistenciaRuta(rId)),
-    comparativo: (rId) => run(() => cases.comparativo(rId))
+    asistenciaPorRuta: (rutaId, d, h, prog, sem) => run(() => cases.asistenciaPorRuta(rutaId, d, h, prog, sem)),
+    asistenciaPorPrograma: (rutaId, d, h, sem) => run(() => cases.asistenciaPorPrograma(rutaId, d, h, sem)),
+    asistenciaPorSemestre: (rutaId, d, h, prog) => run(() => cases.asistenciaPorSemestre(rutaId, d, h, prog)),
+    tendenciaSemanal: (rutaId, d, h) => run(() => cases.tendenciaSemanal(rutaId, d, h)),
+    participantesPorPrograma: (rutaId, sem) => run(() => cases.participantesPorPrograma(rutaId, sem)),
+    participantesPorSemestre: (rutaId, prog) => run(() => cases.participantesPorSemestre(rutaId, prog)),
+    participantesPorRuta: () => run(() => cases.participantesPorRuta()),
+    comparativaFichas: (rutaId, prog) => run(() => cases.comparativaFichas(rutaId, prog)),
+    retencion: () => run(() => cases.retencion())
   }
 }

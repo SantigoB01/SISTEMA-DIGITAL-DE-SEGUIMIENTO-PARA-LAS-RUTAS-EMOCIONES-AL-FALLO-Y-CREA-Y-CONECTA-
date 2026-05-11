@@ -65,7 +65,19 @@ export const usuarioUseCases = (repo) => ({
 })
 
 export const reporteUseCases = (repo) => ({
-  asistenciaSesiones: (rutaId, desde, hasta) => repo.asistenciaSesiones(rutaId, desde, hasta),
-  asistenciaRuta: (rutaId) => repo.asistenciaRuta(rutaId),
-  comparativo: (rutaId) => repo.comparativo(rutaId)
+  asistenciaPorRuta: (rutaId, desde, hasta, programa, semestre) =>
+    repo.asistenciaPorRuta(rutaId, desde, hasta, programa, semestre),
+  asistenciaPorPrograma: (rutaId, desde, hasta, semestre) =>
+    repo.asistenciaPorPrograma(rutaId, desde, hasta, semestre),
+  asistenciaPorSemestre: (rutaId, desde, hasta, programa) =>
+    repo.asistenciaPorSemestre(rutaId, desde, hasta, programa),
+  tendenciaSemanal: (rutaId, desde, hasta) =>
+    repo.tendenciaSemanal(rutaId, desde, hasta),
+  participantesPorPrograma: (rutaId, semestre) =>
+    repo.participantesPorPrograma(rutaId, semestre),
+  participantesPorSemestre: (rutaId, programa) =>
+    repo.participantesPorSemestre(rutaId, programa),
+  participantesPorRuta: () => repo.participantesPorRuta(),
+  comparativaFichas: (rutaId, programa) => repo.comparativaFichas(rutaId, programa),
+  retencion: () => repo.retencion()
 })

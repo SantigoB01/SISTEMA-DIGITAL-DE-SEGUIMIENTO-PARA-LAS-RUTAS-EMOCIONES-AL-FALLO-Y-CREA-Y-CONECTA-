@@ -67,10 +67,60 @@ export const usuarioRepo = {
 }
 
 export const reporteRepo = {
-  asistenciaSesiones: (rId, desde, hasta) => {
-    const q = [desde && `desde=${desde}`, hasta && `hasta=${hasta}`].filter(Boolean).join('&')
-    return http.get(`/reportes/asistencia/sesiones/${rId}${q ? '?' + q : ''}`)
+  // Asistencia
+  asistenciaPorRuta: (rutaId, desde, hasta, programa, semestre) => {
+    const p = new URLSearchParams()
+    if (rutaId) p.append('rutaId', rutaId)
+    if (desde) p.append('fechaInicio', desde)
+    if (hasta) p.append('fechaFin', hasta)
+    if (programa) p.append('programaAcademico', programa)
+    if (semestre) p.append('semestre', semestre)
+    return http.get(`/reportes/asistencia/ruta?${p}`)
   },
-  asistenciaRuta: (rId) => http.get(`/reportes/asistencia/ruta/${rId}`),
-  comparativo: (rId) => http.get(`/reportes/comparativo/${rId}`)
+  asistenciaPorPrograma: (rutaId, desde, hasta, semestre) => {
+    const p = new URLSearchParams()
+    if (rutaId) p.append('rutaId', rutaId)
+    if (desde) p.append('fechaInicio', desde)
+    if (hasta) p.append('fechaFin', hasta)
+    if (semestre) p.append('semestre', semestre)
+    return http.get(`/reportes/asistencia/programa?${p}`)
+  },
+  asistenciaPorSemestre: (rutaId, desde, hasta, programa) => {
+    const p = new URLSearchParams()
+    if (rutaId) p.append('rutaId', rutaId)
+    if (desde) p.append('fechaInicio', desde)
+    if (hasta) p.append('fechaFin', hasta)
+    if (programa) p.append('programaAcademico', programa)
+    return http.get(`/reportes/asistencia/semestre?${p}`)
+  },
+  tendenciaSemanal: (rutaId, desde, hasta) => {
+    const p = new URLSearchParams()
+    if (rutaId) p.append('rutaId', rutaId)
+    if (desde) p.append('fechaInicio', desde)
+    if (hasta) p.append('fechaFin', hasta)
+    return http.get(`/reportes/asistencia/tendencia?${p}`)
+  },
+  // Participantes
+  participantesPorPrograma: (rutaId, semestre) => {
+    const p = new URLSearchParams()
+    if (rutaId) p.append('rutaId', rutaId)
+    if (semestre) p.append('semestre', semestre)
+    return http.get(`/reportes/participantes/programa?${p}`)
+  },
+  participantesPorSemestre: (rutaId, programa) => {
+    const p = new URLSearchParams()
+    if (rutaId) p.append('rutaId', rutaId)
+    if (programa) p.append('programaAcademico', programa)
+    return http.get(`/reportes/participantes/semestre?${p}`)
+  },
+  participantesPorRuta: () => http.get('/reportes/participantes/ruta'),
+  // Fichas PRE vs POST
+  comparativaFichas: (rutaId, programa) => {
+    const p = new URLSearchParams()
+    if (rutaId) p.append('rutaId', rutaId)
+    if (programa) p.append('programaAcademico', programa)
+    return http.get(`/reportes/fichas/comparativa?${p}`)
+  },
+  // Retención
+  retencion: () => http.get('/reportes/retencion')
 }

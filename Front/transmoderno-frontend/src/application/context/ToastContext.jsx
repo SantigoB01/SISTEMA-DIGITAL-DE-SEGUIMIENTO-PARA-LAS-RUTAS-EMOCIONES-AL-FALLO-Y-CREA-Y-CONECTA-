@@ -18,10 +18,11 @@ export function ToastProvider({ children }) {
       <div style={{ position: 'fixed', top: 20, right: 20, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 8 }}>
         {toasts.map(t => (
           <div key={t.id} style={{
-            padding: '12px 20px', borderRadius: 10, color: '#fff', fontSize: 14,
-            background: t.type === 'error' ? '#dc2626' : '#16a34a',
-            boxShadow: '0 4px 20px rgba(0,0,0,.15)', animation: 'slideIn .3s ease', maxWidth: 360
-          }}>{t.msg}</div>
+            padding: '13px 20px', borderRadius: 12, color: '#fff', fontSize: 14, fontFamily: "'DM Sans', sans-serif",
+            background: t.type === 'error' ? 'var(--gt-danger)' : t.type === 'warn' ? 'var(--gt-warn)' : 'var(--gt-primary)',
+            boxShadow: '0 8px 24px rgba(0,0,0,.18)', animation: 'toastIn .3s ease', maxWidth: 380, fontWeight: 500,
+            borderLeft: '4px solid rgba(255,255,255,.3)',
+          }}>{t.type === 'error' ? '⚠ ' : t.type === 'warn' ? '⚡ ' : '✓ '}{t.msg}</div>
         ))}
       </div>
     </ToastContext.Provider>

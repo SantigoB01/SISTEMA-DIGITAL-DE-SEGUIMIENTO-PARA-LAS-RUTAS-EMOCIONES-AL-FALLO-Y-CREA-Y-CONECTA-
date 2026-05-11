@@ -1,63 +1,201 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { useState } from 'react'
-import Icon from '../components/ui/Icon'
+import { NavLink, Outlet, useNavigate, Navigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../../application/context/AuthContext'
+import http from '../../infrastructure/api/httpClient'
 
-const NAV = [
-  { to:'/admin/participantes', label:'Participantes', icon:'users' },
-  { to:'/admin/rutas', label:'Rutas', icon:'route' },
-  { to:'/admin/sesiones', label:'Sesiones', icon:'calendar' },
-  { to:'/admin/inscripciones', label:'Inscripciones', icon:'clipboard' },
-  { to:'/admin/asistencia', label:'Asistencia', icon:'check' },
-  { to:'/admin/fichas', label:'Fichas', icon:'clipboard' },
-  { to:'/admin/alertas', label:'Alertas', icon:'bell' },
-  { to:'/admin/reportes', label:'Reportes', icon:'chart' },
-  { to:'/admin/usuarios', label:'Usuarios', icon:'shield' },
+// ── Permisos por rol ────────────────────────────────────────────────────────
+const PERMISOS = {
+  ADMIN:     ['/admin/dashboard','/admin/participantes','/admin/rutas','/admin/sesiones','/admin/inscripciones','/admin/asistencia','/admin/fichas','/admin/alertas','/admin/reportes','/admin/usuarios'],
+  PSICOLOGO: ['/admin/dashboard','/admin/participantes','/admin/fichas','/admin/alertas','/admin/reportes'],
+  ENCARGADO: ['/admin/dashboard','/admin/participantes','/admin/sesiones','/admin/asistencia','/admin/alertas','/admin/reportes'],
+}
+
+export function puedeAcceder(rol, path) {
+  return (PERMISOS[rol] || []).includes(path)
+}
+
+// ── Nav por rol ─────────────────────────────────────────────────────────────
+const NAV_ADMIN = [
+  { label: 'PRINCIPAL', items: [
+    { to: '/admin/dashboard', label: 'Dashboard', icon: '▪' },
+  ]},
+  { label: 'GESTIÓN', items: [
+    { to: '/admin/participantes', label: 'Participantes', icon: '👥' },
+    { to: '/admin/rutas',         label: 'Módulos',       icon: '🗺' },
+    { to: '/admin/sesiones',      label: 'Sesiones',      icon: '📅' },
+    { to: '/admin/inscripciones', label: 'Inscripciones', icon: '📋' },
+    { to: '/admin/asistencia',    label: 'Asistencia',    icon: '✅' },
+  ]},
+  { label: 'EVALUACIÓN', items: [
+    { to: '/admin/fichas',   label: 'Fichas',   icon: '📝' },
+    { to: '/admin/alertas',  label: 'Alertas',  icon: '🔔', badge: true },
+    { to: '/admin/reportes', label: 'Reportes', icon: '📊' },
+  ]},
+  { label: 'SISTEMA', items: [
+    { to: '/admin/usuarios', label: 'Usuarios staff', icon: '🛡' },
+  ]},
 ]
 
+const NAV_PSICOLOGO = [
+  { label: 'PRINCIPAL', items: [
+    { to: '/admin/dashboard', label: 'Dashboard', icon: '▪' },
+  ]},
+  { label: 'GESTIÓN', items: [
+    { to: '/admin/participantes', label: 'Participantes', icon: '👥' },
+  ]},
+  { label: 'EVALUACIÓN', items: [
+    { to: '/admin/fichas',   label: 'Fichas',   icon: '📝' },
+    { to: '/admin/alertas',  label: 'Alertas',  icon: '🔔', badge: true },
+    { to: '/admin/reportes', label: 'Reportes', icon: '📊' },
+  ]},
+]
+
+const NAV_ENCARGADO = [
+  { label: 'PRINCIPAL', items: [
+    { to: '/admin/dashboard', label: 'Dashboard', icon: '▪' },
+  ]},
+  { label: 'GESTIÓN', items: [
+    { to: '/admin/participantes', label: 'Participantes', icon: '👥' },
+    { to: '/admin/sesiones',      label: 'Sesiones',      icon: '📅' },
+    { to: '/admin/asistencia',    label: 'Asistencia',    icon: '✅' },
+  ]},
+  { label: 'EVALUACIÓN', items: [
+    { to: '/admin/alertas',  label: 'Alertas',  icon: '🔔', badge: true },
+    { to: '/admin/reportes', label: 'Reportes', icon: '📊' },
+  ]},
+]
+
+const NAV_BY_ROL = { ADMIN: NAV_ADMIN, PSICOLOGO: NAV_PSICOLOGO, ENCARGADO: NAV_ENCARGADO }
+
+const ROL_COLOR = { ADMIN: '#C8952A', PSICOLOGO: '#38bdf8', ENCARGADO: '#4ade80' }
+const ROL_ICON  = { ADMIN: '👑', PSICOLOGO: '🧠', ENCARGADO: '📋' }
+
+// ── Guardia de ruta por rol ─────────────────────────────────────────────────
+export function RequireRole({ path, children }) {
+  const { user } = useAuth()
+  if (!user) return <Navigate to="/login/admin" replace />
+  if (!puedeAcceder(user.rol, path)) {
+    const fallback = PERMISOS[user.rol]?.[0] || '/admin/dashboard'
+    return <Navigate to={fallback} replace />
+  }
+  return children
+}
+
+// ── NavItem ─────────────────────────────────────────────────────────────────
+function NavItem({ to, label, icon, badgeCount }) {
+  return (
+    <NavLink to={to} style={({ isActive }) => ({
+      display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
+      borderRadius: 8, marginBottom: 1, textDecoration: 'none', fontSize: 13, fontWeight: 500,
+      background: isActive ? 'rgba(255,255,255,.18)' : 'transparent',
+      color: isActive ? '#fff' : 'rgba(255,255,255,.65)',
+      transition: 'all .15s',
+    })}
+      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.09)'; e.currentTarget.style.color = '#fff' }}
+      onMouseLeave={e => { e.currentTarget.style.background = ''; e.currentTarget.style.color = '' }}
+    >
+      <span style={{ fontSize: 15, lineHeight: 1 }}>{icon}</span>
+      <span style={{ flex: 1 }}>{label}</span>
+      {badgeCount > 0 && (
+        <span style={{ background: 'var(--gt-danger)', color: '#fff', borderRadius: 10, fontSize: 10, fontWeight: 800, padding: '1px 6px', minWidth: 18, textAlign: 'center' }}>
+          {badgeCount}
+        </span>
+      )}
+    </NavLink>
+  )
+}
+
+// ── AdminLayout ─────────────────────────────────────────────────────────────
 export default function AdminLayout() {
-  const [open, setOpen] = useState(true)
   const { user, logout } = useAuth()
   const nav = useNavigate()
+  const [pendientes, setPendientes] = useState(0)
 
-  const doLogout = () => { logout(); nav('/login') }
+  const rol     = user?.rol || 'ADMIN'
+  const sections = NAV_BY_ROL[rol] || NAV_ADMIN
+
+  useEffect(() => {
+    if (rol !== 'ENCARGADO') {
+      const fetch = async () => {
+        try {
+          const r = await http.get('/alertas/ayuda/pendientes/count')
+          setPendientes(typeof r === 'number' ? r : r?.count || 0)
+        } catch {}
+      }
+      fetch()
+      const id = setInterval(fetch, 30000)
+      return () => clearInterval(id)
+    }
+  }, [rol])
+
+  const doLogout = () => { logout(); nav('/') }
 
   return (
-    <div style={{ display:'flex', minHeight:'100vh' }}>
-      <aside style={{
-        width:open?260:72, background:'#fff', borderRight:'1px solid #e8ece8',
-        transition:'width .3s', display:'flex', flexDirection:'column', flexShrink:0, overflow:'hidden'
-      }}>
-        <div onClick={()=>setOpen(!open)} style={{padding:open?'24px 20px':'24px 12px',borderBottom:'1px solid #e8ece8',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}>
-          <div style={{width:40,height:40,borderRadius:12,background:'linear-gradient(135deg,#16a34a,#22c55e)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,boxShadow:'0 2px 8px rgba(22,163,74,.3)'}}>
-            <span style={{color:'#fff',fontWeight:700,fontSize:18,fontFamily:"'Playfair Display',serif"}}>G</span>
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--gt-bg)' }}>
+
+      {/* ── Sidebar ── */}
+      <aside style={{ width: 'var(--gt-sidebar-w)', flexShrink: 0, background: 'var(--gt-primary)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+
+        {/* Logo */}
+        <div style={{ padding: '18px 14px 14px', borderBottom: '1px solid rgba(255,255,255,.1)', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 32, height: 32, background: 'rgba(255,255,255,.2)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 15, flexShrink: 0 }}>G</div>
+          <div>
+            <div style={{ color: '#fff', fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>Transmoderno</div>
+            <div style={{ color: 'rgba(255,255,255,.5)', fontSize: 11 }}>UCundinamarca</div>
           </div>
-          {open&&<div><div style={{fontWeight:700,fontSize:15,color:'#111',whiteSpace:'nowrap'}}>Transmoderno</div><div style={{fontSize:11,color:'#9ca3af',whiteSpace:'nowrap'}}>UCundinamarca · Fusagasugá</div></div>}
         </div>
 
-        <nav style={{flex:1,padding:'12px 8px',display:'flex',flexDirection:'column',gap:2}}>
-          {NAV.map(n=>(
-            <NavLink key={n.to} to={n.to} style={({isActive})=>({
-              display:'flex',alignItems:'center',gap:12,padding:open?'10px 14px':'10px 0',
-              justifyContent:open?'flex-start':'center',borderRadius:10,border:'none',
-              transition:'all .2s',background:isActive?'#f0faf0':'transparent',
-              color:isActive?'#16a34a':'#6b7280',fontFamily:"'DM Sans',sans-serif",fontSize:14,fontWeight:isActive?600:500
-            })}>
-              {({isActive})=><><Icon name={n.icon} size={20} color={isActive?'#16a34a':'#9ca3af'}/>{open&&<span style={{whiteSpace:'nowrap'}}>{n.label}</span>}</>}
-            </NavLink>
+        {/* Perfil badge */}
+        <div style={{ margin: '10px 10px 4px', background: 'rgba(255,255,255,.08)', borderRadius: 10, padding: '10px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(255,255,255,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 13, flexShrink: 0 }}>
+              {(user?.nombre || 'A').split(' ').slice(0,2).map(n => n[0]).join('')}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ color: '#fff', fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {user?.nombre?.split(' ')[0]} {user?.nombre?.split(' ')[1] || ''}
+              </div>
+              <div style={{ color: 'rgba(255,255,255,.5)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.correo}</div>
+            </div>
+          </div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(255,255,255,.12)', borderRadius: 20, padding: '3px 10px' }}>
+            <span style={{ fontSize: 12 }}>{ROL_ICON[rol]}</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: ROL_COLOR[rol] || '#fff' }}>
+              {{ ADMIN: 'Administrador', PSICOLOGO: 'Psicólogo', ENCARGADO: 'Encargado' }[rol] || rol}
+            </span>
+          </div>
+        </div>
+
+        {/* Nav */}
+        <nav style={{ flex: 1, padding: '8px 8px' }}>
+          {sections.map(sec => (
+            <div key={sec.label}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,.3)', letterSpacing: 2, textTransform: 'uppercase', padding: '12px 10px 4px', display: 'block' }}>
+                {sec.label}
+              </span>
+              {sec.items.map(item => (
+                <NavItem key={item.to} to={item.to} label={item.label} icon={item.icon} badgeCount={item.badge ? pendientes : 0} />
+              ))}
+            </div>
           ))}
         </nav>
 
-        <div style={{padding:16,borderTop:'1px solid #e8ece8'}}>
-          {open&&user&&<div style={{fontSize:13,color:'#374151',marginBottom:8,fontWeight:600}}>{user.nombre}<br/><span style={{fontWeight:400,color:'#9ca3af',fontSize:12}}>{user.rol}</span></div>}
-          <button onClick={doLogout} style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'8px 12px',borderRadius:8,border:'none',background:'#fef2f2',color:'#dc2626',fontSize:13,fontWeight:600,justifyContent:open?'flex-start':'center'}}>
-            <Icon name="logout" size={16} color="#dc2626"/>{open&&'Cerrar sesión'}
+        {/* Logout */}
+        <div style={{ padding: '12px 10px', borderTop: '1px solid rgba(255,255,255,.1)' }}>
+          <button onClick={doLogout}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'none', border: 'none', color: 'rgba(255,255,255,.6)', fontSize: 13, cursor: 'pointer', borderRadius: 8, fontFamily: "'DM Sans', sans-serif", transition: 'all .15s' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(220,38,38,.2)'; e.currentTarget.style.color = '#fca5a5' }}
+            onMouseLeave={e => { e.currentTarget.style.background = ''; e.currentTarget.style.color = '' }}>
+            <span>🚪</span> Cerrar sesión
           </button>
         </div>
       </aside>
 
-      <main style={{flex:1,padding:32,overflowY:'auto',maxHeight:'100vh'}}>
-        <Outlet/>
+      {/* ── Main ── */}
+      <main style={{ flex: 1, overflowY: 'auto' }}>
+        <div style={{ padding: 28, maxWidth: 1100, minHeight: '100%' }} className="page-enter">
+          <Outlet />
+        </div>
       </main>
     </div>
   )
