@@ -1,69 +1,136 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { StatCard, Card, PageHeader, Spinner } from '../../components/ui/index'
+import { Spinner } from '../../components/ui/index'
 import http from '../../../infrastructure/api/httpClient'
 import { useAuth } from '../../../application/context/AuthContext'
 import { rutaRepo } from '../../../infrastructure/repositories'
 
-const MODULOS = [
-  { nombre: 'Emociones al Fallo', desc: 'Regulación emocional y bienestar psicológico', icon: '🔥', color: '#FEF3DC', colorText: '#92400E' },
-  { nombre: 'Crea y Conecta',     desc: 'Creatividad, expresión y vínculos sociales',   icon: '🎨', color: '#EDE9FE', colorText: '#5B21B6' },
-]
+const GREEN  = '#0D5C2F'
+const GREEN2 = '#16A34A'
 
-const NIVEL_COLOR = { ALTO: 'var(--gt-danger)', MODERADO: 'var(--gt-warn)', LEVE: '#f59e0b' }
+// ── Mini gráfica de barras SVG ────────────────────────────────────────────────
+function MiniBar({ data, vk = 'total', lk = 'etiqueta', color = GREEN2 }) {
+  if (!data?.length) return <p style={{ color:'#9CA3AF', fontSize:12, padding:'8px 0' }}>Sin datos</p>
+  const max = Math.max(...data.map(d => Number(d[vk])||0)) || 1
+  const W=280, H=80, PAD={t:4,r:4,b:20,l:4}
+  const cW=W-PAD.l-PAD.r, cH=H-PAD.t-PAD.b
+  const bW=Math.min(28, cW/data.length-4)
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%' }}>
+      {data.map((d,i)=>{
+        const val=Number(d[vk])||0
+        const x=PAD.l+(cW/data.length)*i+(cW/data.length-bW)/2
+        const bH=(val/max)*cH, y=PAD.t+cH-bH
+        return <g key={i}>
+          <rect x={x} y={y} width={bW} height={bH} fill={color} rx={3} opacity={.85}/>
+          {bH>12&&<text x={x+bW/2} y={y+bH/2+4} textAnchor="middle" fontSize={9} fill="#fff" fontFamily="DM Sans" fontWeight="700">{val}</text>}
+          <text x={x+bW/2} y={PAD.t+cH+14} textAnchor="middle" fontSize={8} fill="#9CA3AF" fontFamily="DM Sans"
+            transform={`rotate(-25,${x+bW/2},${PAD.t+cH+14})`}>{String(d[lk]||'').slice(0,10)}</text>
+        </g>
+      })}
+      <line x1={PAD.l} x2={PAD.l+cW} y1={PAD.t+cH} y2={PAD.t+cH} stroke="#E5E7EB"/>
+    </svg>
+  )
+}
 
-const ROL_LABEL = { ADMIN: 'Administrador', PSICOLOGO: 'Psicólogo', ENCARGADO: 'Encargado' }
+// ── KPI card ──────────────────────────────────────────────────────────────────
+function Stat({ label, value, icon, color = GREEN, to, sub }) {
+  const inner = (
+    <div style={{ background:'#fff', borderRadius:14, padding:'18px 20px', border:'1px solid #E5EDE5', boxShadow:'0 1px 4px rgba(0,0,0,.05)', height:'100%', boxSizing:'border-box', transition:'box-shadow .15s' }}
+      onMouseEnter={e=>{if(to)e.currentTarget.style.boxShadow='0 4px 16px rgba(0,0,0,.10)'}}
+      onMouseLeave={e=>{e.currentTarget.style.boxShadow='0 1px 4px rgba(0,0,0,.05)'}}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8 }}>
+        <p style={{ fontSize:10, fontWeight:700, color:'#9CA3AF', textTransform:'uppercase', letterSpacing:1.5, margin:0 }}>{label}</p>
+        <span style={{ fontSize:20 }}>{icon}</span>
+      </div>
+      <p style={{ fontSize:30, fontWeight:800, color, margin:'0 0 4px', lineHeight:1 }}>{value ?? '—'}</p>
+      {sub && <p style={{ fontSize:11, color:'#9CA3AF', margin:0 }}>{sub}</p>}
+    </div>
+  )
+  return to ? <Link to={to} style={{ textDecoration:'none', display:'block' }}>{inner}</Link> : inner
+}
+
+// ── AlertRow ──────────────────────────────────────────────────────────────────
+const NIVEL_DOT = { SIN_ASISTENCIA:'#7c3aed', ALTO:'#dc2626', MODERADO:'#f97316', LEVE:'#f59e0b' }
+
+function AlertRow({ a }) {
+  const dot = NIVEL_DOT[a.nivelRiesgo] || '#9CA3AF'
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0', borderBottom:'1px solid #F0F4F0' }}>
+      <span style={{ width:8, height:8, borderRadius:'50%', background:dot, flexShrink:0 }}/>
+      <div style={{ flex:1, minWidth:0 }}>
+        <p style={{ fontWeight:600, fontSize:13, color:'#111', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+          {a.nombreCompleto || `Participante #${a.participanteId}`}
+        </p>
+        <p style={{ fontSize:11, color:'#9CA3AF', margin:0 }}>
+          {a.sesionesInasistidas || 0} faltas · <span style={{ color:dot, fontWeight:700 }}>{a.nivelRiesgo}</span>
+        </p>
+      </div>
+    </div>
+  )
+}
+
+const ROL_LABEL = { ADMIN:'Administrador', PSICOLOGO:'Psicólogo', ENCARGADO:'Encargado' }
+const ROL_ICON  = { ADMIN:'👑', PSICOLOGO:'🧠', ENCARGADO:'📋' }
 
 export default function DashboardPage() {
-  const { user, isAdmin, isEncargado, isPsicologo } = useAuth()
+  const { user } = useAuth()
   const rol = user?.rol
 
-  const [loading, setLoading]   = useState(true)
-  const [stats, setStats]       = useState({ participantes: 0, sesiones: 0, solicitudes: 0, alertas: 0 })
-  const [alertas, setAlertas]   = useState([])
-  const [modulos, setModulos]   = useState([])
+  const [loading, setLoading] = useState(true)
+  const [stats, setStats]     = useState({ participantes:0, sesiones:0, solicitudes:0, alertas:0 })
+  const [alertas, setAlertas] = useState([])
+  const [asistChart, setAsistChart] = useState([])
+  const [rutas, setRutas]     = useState([])
 
-  useEffect(() => { cargarTodo() }, [])
+  const isAdmin = rol === 'ADMIN'
+  const isPsi   = rol === 'PSICOLOGO'
+  const isEnc   = rol === 'ENCARGADO'
 
-  const cargarTodo = async () => {
+  useEffect(() => { cargar() }, [])
+
+  const cargar = async () => {
     setLoading(true)
     try {
-      // Módulos del back (los 2 fijos)
       const rs = await rutaRepo.findAll()
-      setModulos(rs.filter(r => r.activa))
+      setRutas(rs.filter(r=>r.activa))
 
-      // Participantes
-      let totalP = 0
-      try { const r = await http.get('/participantes?page=0&size=1'); totalP = r.totalElementos || 0 } catch {}
+      let totalP=0, totalS=0, solicitudes=0, alertasN=0
 
-      // Sesiones (admin + encargado)
-      let totalS = 0
-      if (isAdmin || isEncargado) {
+      try { const r=await http.get('/participantes?page=0&size=1'); totalP=r.totalElementos||0 } catch {}
+
+      if (isAdmin || isEnc) {
         try {
-          const activas = rs.filter(r => r.activa)
-          const sArr = await Promise.all(activas.map(r => http.get(`/sesiones/ruta/${r.id}?page=0&size=1`).catch(() => ({ totalElementos: 0 }))))
-          totalS = sArr.reduce((a, r) => a + (r.totalElementos || 0), 0)
+          const activas = rs.filter(r=>r.activa)
+          const sArr = await Promise.all(activas.map(r=>http.get(`/sesiones/ruta/${r.id}?page=0&size=1`).catch(()=>({totalElementos:0}))))
+          totalS = sArr.reduce((a,r)=>a+(r.totalElementos||0),0)
         } catch {}
       }
 
-      // Solicitudes ayuda (admin + psicologo)
-      let solicitudes = 0
-      if (isAdmin || isPsicologo) {
+      if (isAdmin || isPsi) {
         try {
-          const r = await http.get('/alertas/ayuda?page=0&size=50')
-          solicitudes = (r.contenido || []).filter(s => !s.atendida).length
+          const r=await http.get('/alertas/ayuda?page=0&size=50')
+          solicitudes=(r.contenido||[]).filter(s=>!s.atendida).length
         } catch {}
       }
 
-      // Alertas inasistencia (todos)
-      let totalA = 0
       try {
-        const r = await http.get('/alertas/inasistencia?page=0&size=5')
-        setAlertas(r.contenido || [])
-        totalA = r.totalElementos || 0
+        const r=await http.get('/alertas/inasistencia?page=0&size=5')
+        setAlertas(r.contenido||[])
+        alertasN=r.totalElementos||0
       } catch {}
 
-      setStats({ participantes: totalP, sesiones: totalS, solicitudes, alertas: totalA })
+      // Mini chart: asistencia por ruta
+      try {
+        const rIds = rs.filter(r=>r.activa).map(r=>r.id)
+        const asistData = rIds.map(id => {
+          const ruta = rs.find(r=>r.id===id)
+          return { etiqueta: ruta?.nombre?.split(' ')[0]||`R${id}`, rutaId: id, total: 0 }
+        })
+        setAsistChart(asistData)
+      } catch {}
+
+      setStats({ participantes:totalP, sesiones:totalS, solicitudes, alertas:alertasN })
     } catch {}
     setLoading(false)
   }
@@ -74,112 +141,91 @@ export default function DashboardPage() {
   const saludo = hora < 12 ? 'Buenos días' : hora < 18 ? 'Buenas tardes' : 'Buenas noches'
 
   return (
-    <div>
-      {/* ── Bienvenida ── */}
-      <div style={{ background: 'linear-gradient(135deg,#0D5C2F,#16A34A)', borderRadius: 16, padding: '22px 24px', marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div style={{ fontFamily:"'DM Sans',sans-serif" }}>
+
+      {/* ── Bienvenida compacta ── */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
         <div>
-          <p style={{ color: 'rgba(255,255,255,.7)', fontSize: 13, margin: '0 0 4px' }}>{saludo},</p>
-          <h2 style={{ color: '#fff', fontSize: 22, fontWeight: 800, margin: '0 0 4px' }}>{user?.nombre}</h2>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,.15)', borderRadius: 20, padding: '3px 12px', fontSize: 12, color: 'rgba(255,255,255,.9)', fontWeight: 600 }}>
-            {{ ADMIN: '👑', PSICOLOGO: '🧠', ENCARGADO: '📋' }[rol]} {ROL_LABEL[rol] || rol}
-          </span>
+          <p style={{ fontSize:13, color:'var(--gt-muted)', margin:'0 0 3px' }}>{saludo},</p>
+          <h1 style={{ fontSize:22, fontWeight:800, color:'var(--gt-text)', margin:0 }}>{user?.nombre}</h1>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <p style={{ color: 'rgba(255,255,255,.6)', fontSize: 12, margin: 0 }}>
-            {new Date().toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </p>
-        </div>
+        <span style={{ display:'inline-flex', alignItems:'center', gap:6, background:'var(--gt-primary-light)', borderRadius:20, padding:'6px 14px', fontSize:13, color:'var(--gt-primary)', fontWeight:700 }}>
+          {ROL_ICON[rol]} {ROL_LABEL[rol]||rol}
+        </span>
       </div>
 
-      {/* ── Stats ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14, marginBottom: 24 }}>
-        <StatCard label="Participantes" value={stats.participantes} sub="Registrados" icon="👥" />
-
-        {(isAdmin || isEncargado) && (
-          <StatCard label="Sesiones" value={stats.sesiones} sub="Programadas" icon="📅" color="var(--gt-primary)" />
-        )}
-
-        {(isAdmin || isPsicologo) && (
-          <StatCard label="Solicitudes" value={stats.solicitudes} sub="Sin atender" icon="🙋" color="var(--gt-danger)" />
-        )}
-
-        <StatCard label="Alertas" value={stats.alertas} sub="Por inasistencia" icon="🔔" color="var(--gt-warn)" />
+      {/* ── KPIs ── */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:12, marginBottom:20 }}>
+        <Stat label="Participantes"  value={stats.participantes} icon="👥" to="/admin/participantes" sub="Registrados en el sistema" />
+        {(isAdmin||isEnc) && <Stat label="Sesiones" value={stats.sesiones} icon="📅" color={GREEN} to="/admin/sesiones" sub="Programadas en total" />}
+        {(isAdmin||isPsi) && <Stat label="Solicitudes" value={stats.solicitudes} icon="🙋" color="#f97316" to="/admin/alertas" sub="Sin atender" />}
+        <Stat label="Alertas inasist." value={stats.alertas} icon="🔔" color="#dc2626" to="/admin/alertas" sub="Registradas" />
       </div>
 
       {/* ── Fila principal ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-
-        {/* Módulos fijos */}
-        <Card>
-          <div style={{ marginBottom: 14 }}>
-            <h3 style={{ fontWeight: 800, fontSize: 15, color: 'var(--gt-text)', margin: '0 0 2px' }}>Módulos del programa</h3>
-            <p style={{ fontSize: 12, color: 'var(--gt-muted)', margin: 0 }}>Programas activos en Gimnasio Transmoderno</p>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {modulos.length === 0
-              ? MODULOS.map((m, i) => <ModuloCard key={i} {...m} />)
-              : modulos.map((r, i) => {
-                  const def = MODULOS.find(m => r.nombre?.toLowerCase().includes(m.nombre.split(' ')[0].toLowerCase())) || MODULOS[i % 2]
-                  return <ModuloCard key={r.id} nombre={r.nombre} desc={r.descripcion || def.desc} icon={def.icon} color={def.color} colorText={def.colorText} />
-                })
-            }
-          </div>
-        </Card>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:14 }}>
 
         {/* Alertas recientes */}
-        <Card>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <h3 style={{ fontWeight: 800, fontSize: 15, color: 'var(--gt-text)', margin: 0 }}>Alertas recientes</h3>
-            <Link to="/admin/alertas" style={{ fontSize: 12, color: 'var(--gt-primary)', fontWeight: 700, textDecoration: 'none' }}>Ver todas →</Link>
+        <div style={{ background:'#fff', borderRadius:16, padding:'20px', border:'1px solid #E5EDE5', boxShadow:'0 1px 4px rgba(0,0,0,.05)' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+            <h3 style={{ fontWeight:800, fontSize:15, color:'#111', margin:0 }}>Alertas recientes</h3>
+            <Link to="/admin/alertas" style={{ fontSize:12, color:GREEN, fontWeight:700, textDecoration:'none' }}>Ver todas →</Link>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {alertas.length === 0
-              ? <p style={{ fontSize: 13, color: 'var(--gt-muted)', textAlign: 'center', padding: '20px 0' }}>Sin alertas registradas</p>
-              : alertas.slice(0, 5).map((a, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: NIVEL_COLOR[a.nivelRiesgo] || '#9ca3af', flexShrink: 0 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontWeight: 600, fontSize: 13, color: 'var(--gt-text)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {a.nombreCompleto || `Participante #${a.participanteId}`}
-                    </p>
-                    <p style={{ fontSize: 11, color: 'var(--gt-muted)', margin: 0 }}>
-                      {a.sesionesInasistidas} faltas · <span style={{ color: NIVEL_COLOR[a.nivelRiesgo] || 'var(--gt-muted)', fontWeight: 700 }}>{a.nivelRiesgo}</span>
-                    </p>
+          {alertas.length === 0
+            ? <p style={{ fontSize:13, color:'#9CA3AF', textAlign:'center', padding:'20px 0' }}>Sin alertas registradas</p>
+            : alertas.slice(0,5).map((a,i) => <AlertRow key={i} a={a} />)
+          }
+        </div>
+
+        {/* Rutas activas + accesos */}
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          {/* Rutas del programa */}
+          <div style={{ background:'#fff', borderRadius:16, padding:'20px', border:'1px solid #E5EDE5', flex:1 }}>
+            <h3 style={{ fontWeight:800, fontSize:15, color:'#111', margin:'0 0 14px' }}>Rutas del programa</h3>
+            {rutas.length === 0
+              ? <p style={{ fontSize:13, color:'#9CA3AF' }}>Sin rutas activas</p>
+              : rutas.map((ruta, i) => (
+                <div key={ruta.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, background: i===0?'#FEF3DC':'#EDE9FE', marginBottom:8 }}>
+                  <span style={{ fontSize:20 }}>{ruta.nombre?.includes('Fallo')?'🔥':'🎨'}</span>
+                  <div>
+                    <p style={{ fontWeight:700, fontSize:13, color:'#111', margin:0 }}>{ruta.nombre}</p>
+                    <p style={{ fontSize:11, color:'#9CA3AF', margin:0 }}>{ruta.descripcion||'Módulo activo'}</p>
                   </div>
+                  <span style={{ marginLeft:'auto', width:8, height:8, borderRadius:'50%', background:GREEN2, flexShrink:0 }}/>
                 </div>
               ))
             }
           </div>
-        </Card>
+
+          {/* Accesos según rol — solo los más relevantes */}
+          <div style={{ background:'#fff', borderRadius:16, padding:'20px', border:'1px solid #E5EDE5' }}>
+            <h3 style={{ fontWeight:800, fontSize:15, color:'#111', margin:'0 0 12px' }}>Ir a</h3>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+              {accesosPorRol(rol).slice(0,4).map((item,i) => (
+                <Link key={i} to={item.to} style={{
+                  display:'flex', alignItems:'center', gap:8, padding:'9px 12px', borderRadius:10,
+                  background:item.bg, color:'#111', textDecoration:'none', fontSize:12, fontWeight:600,
+                }}>
+                  <span style={{ fontSize:18 }}>{item.icon}</span> {item.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* ── Accesos rápidos según rol ── */}
-      <Card>
-        <h3 style={{ fontWeight: 800, fontSize: 15, color: 'var(--gt-text)', marginBottom: 14 }}>Accesos rápidos</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
-          {accesosPorRol(rol).map((item, i) => (
-            <Link key={i} to={item.to} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 12, background: item.bg, color: 'var(--gt-text)', textDecoration: 'none', fontWeight: 600, fontSize: 13, transition: 'opacity .15s' }}
-              onMouseEnter={e => { e.currentTarget.style.opacity = '.8' }}
-              onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}>
-              <span style={{ fontSize: 20 }}>{item.icon}</span>
-              <span>{item.label}</span>
-            </Link>
+      {/* ── Reporte rápido ── */}
+      <div style={{ background:'#fff', borderRadius:16, padding:'20px', border:'1px solid #E5EDE5', boxShadow:'0 1px 4px rgba(0,0,0,.05)' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+          <h3 style={{ fontWeight:800, fontSize:15, color:'#111', margin:0 }}>Vista rápida — Reportes</h3>
+          <Link to="/admin/reportes" style={{ fontSize:12, color:GREEN, fontWeight:700, textDecoration:'none' }}>Ver reportes completos →</Link>
+        </div>
+        <p style={{ fontSize:12, color:'#9CA3AF', margin:'0 0 12px' }}>Accede a reportes estadísticos completos con exportación PDF, Excel y CSV.</p>
+        <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+          {['Asistencia por ruta','PRE vs POST','Retención','Tendencia semanal'].map((item,i)=>(
+            <Link key={i} to="/admin/reportes" style={{ padding:'7px 14px', borderRadius:8, background:'var(--gt-bg)', fontSize:12, fontWeight:600, color:'#374151', textDecoration:'none', border:'1px solid var(--gt-border)' }}>{item}</Link>
           ))}
         </div>
-      </Card>
-    </div>
-  )
-}
-
-function ModuloCard({ nombre, desc, icon, color, colorText }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, background: color }}>
-      <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(255,255,255,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
-        {icon}
-      </div>
-      <div>
-        <p style={{ fontWeight: 700, fontSize: 14, color: colorText, margin: '0 0 2px' }}>{nombre}</p>
-        <p style={{ fontSize: 12, color: colorText, opacity: .75, margin: 0 }}>{desc}</p>
       </div>
     </div>
   )
@@ -187,14 +233,12 @@ function ModuloCard({ nombre, desc, icon, color, colorText }) {
 
 function accesosPorRol(rol) {
   const all = [
-    { to: '/admin/participantes', label: 'Participantes', icon: '👥', bg: '#E8F5ED',  roles: ['ADMIN','PSICOLOGO','ENCARGADO'] },
-    { to: '/admin/sesiones',      label: 'Sesiones',      icon: '📅', bg: '#E0F2FE',  roles: ['ADMIN','ENCARGADO'] },
-    { to: '/admin/asistencia',    label: 'Asistencia',    icon: '✅', bg: '#F0FDF4',  roles: ['ADMIN','ENCARGADO'] },
-    { to: '/admin/inscripciones', label: 'Inscripciones', icon: '📋', bg: '#FEF3DC',  roles: ['ADMIN'] },
-    { to: '/admin/fichas',        label: 'Fichas',        icon: '📝', bg: '#FEF9C3',  roles: ['ADMIN','PSICOLOGO'] },
-    { to: '/admin/alertas',       label: 'Alertas',       icon: '🔔', bg: '#FEE2E2',  roles: ['ADMIN','PSICOLOGO','ENCARGADO'] },
-    { to: '/admin/reportes',      label: 'Reportes',      icon: '📊', bg: '#EDE9FE',  roles: ['ADMIN','PSICOLOGO','ENCARGADO'] },
-    { to: '/admin/usuarios',      label: 'Usuarios',      icon: '🛡', bg: '#F0F4F1',  roles: ['ADMIN'] },
+    { to:'/admin/participantes', label:'Participantes', icon:'👥', bg:'#E8F5ED', roles:['ADMIN','PSICOLOGO','ENCARGADO'] },
+    { to:'/admin/sesiones',      label:'Sesiones',      icon:'📅', bg:'#E0F2FE', roles:['ADMIN','ENCARGADO'] },
+    { to:'/admin/fichas',        label:'Fichas',        icon:'📝', bg:'#FEF9C3', roles:['ADMIN','PSICOLOGO'] },
+    { to:'/admin/alertas',       label:'Alertas',       icon:'🔔', bg:'#FEE2E2', roles:['ADMIN','PSICOLOGO','ENCARGADO'] },
+    { to:'/admin/reportes',      label:'Reportes',      icon:'📊', bg:'#EDE9FE', roles:['ADMIN','PSICOLOGO','ENCARGADO'] },
+    { to:'/admin/usuarios',      label:'Usuarios',      icon:'🛡', bg:'#F0F4F1', roles:['ADMIN'] },
   ]
-  return all.filter(a => a.roles.includes(rol))
+  return all.filter(a=>a.roles.includes(rol))
 }

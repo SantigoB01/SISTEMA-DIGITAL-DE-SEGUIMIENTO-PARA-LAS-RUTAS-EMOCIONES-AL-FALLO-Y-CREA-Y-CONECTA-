@@ -1,293 +1,296 @@
-import { useState, useRef } from 'react'
-import { useParticipantes } from '../../../application/hooks'
+import { useState, useEffect, useRef } from 'react'
+import { useParticipantes, useRutas } from '../../../application/hooks'
 import { Participante } from '../../../domain/models'
-import { Btn, Input, Table, Pagination, PageHeader, Modal, Badge } from '../../components/ui/index'
+import { Btn, Input, Select, Table, Pagination, PageHeader, Modal, Badge, TabBar, Card, Spinner } from '../../components/ui/index'
 import http from '../../../infrastructure/api/httpClient'
-import { useToast } from '../../../application/context/ToastContext'
+import * as XLSX from 'xlsx'
 
-// ── Columnas de mapeo Excel/CSV esperadas ────────────────────────────────
-const CSV_TEMPLATE = `numeroIdentificacion,nombreCompleto,correoInstitucional,programaAcademico,semestre,sede,tipoDocumento,estamento
-1070464317,Santiago Buitrago,sstivenbuitrago@ucundinamarca.edu.co,Ingeniería de Sistemas,9,FUSAGASUGÁ,CC,ESTUDIANTE`
+// Extrae sede corta: "UNIDAD REGIONAL, SEDE FUSAGASUGÁ" → "Fusagasugá"
+const sedeCort = (s='') => s?.split(',').pop()?.trim().replace(/^(SEDE|EXTENSIÓN|EXTENSION)\s*/i,'') || s
 
-// ── Modal de importación ─────────────────────────────────────────────────
-function ImportModal({ open, onClose, onDone }) {
-  const toast = useToast()
-  const fileRef = useRef(null)
-  const [file, setFile] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [resultado, setResultado] = useState(null)
-  const [paso, setPaso] = useState(1) // 1=selección, 2=resultado
+// Campos para exportar
+const EXPORT_COLS = [
+  { key:'nombreCompleto',       label:'Nombre completo' },
+  { key:'numeroIdentificacion', label:'Número identificación' },
+  { key:'correoInstitucional',  label:'Correo institucional' },
+  { key:'programaAcademico',    label:'Programa académico' },
+  { key:'semestre',             label:'Semestre' },
+  { key:'sede',                 label:'Sede' },
+  { key:'estamento',            label:'Estamento' },
+  { key:'tipoDocumento',        label:'Tipo documento' },
+  { key:'fechaRegistro',        label:'Fecha registro' },
+  { key:'rutaInscrita',         label:'Ruta inscrita' },
+  { key:'estadoInscripcion',    label:'Estado inscripción' },
+]
 
-  const reset = () => { setFile(null); setResultado(null); setPaso(1) }
-  const handleClose = () => { reset(); onClose() }
+async function fetchPartById(id) {
+  try { return await http.get(`/participantes/${id}`) } catch { return null }
+}
 
-  const descargarPlantilla = () => {
-    const blob = new Blob([CSV_TEMPLATE], { type: 'text/csv;charset=utf-8' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = 'plantilla_participantes.csv'
-    a.click()
-  }
+async function cargarInscritosConDatos(rutaId) {
+  const url = rutaId ? `/inscripciones?rutaId=${rutaId}&page=0&size=500` : '/inscripciones?page=0&size=500'
+  const res = await http.get(url)
+  const inscs = res.contenido || []
 
-  const handleFile = (e) => {
-    const f = e.target.files[0]
-    if (!f) return
-    const ext = f.name.split('.').pop().toLowerCase()
-    if (!['csv', 'xlsx', 'xls'].includes(ext)) {
-      toast('Solo se aceptan archivos CSV o Excel', 'error')
-      return
+  // La inscripción devuelve numeroIdentificacion (cédula) — usarla para buscar el participante
+  const uniqueCedulas = [...new Set(inscs.map(i => i.numeroIdentificacion).filter(Boolean))]
+
+  // Endpoint real: GET /participantes/identificacion/{cedula}
+  const parts = await Promise.all(uniqueCedulas.map(async cedula => {
+    try { return await http.get(`/participantes/identificacion/${cedula}`) } catch { return null }
+  }))
+
+  const partMap = new Map(parts.filter(Boolean).map(p => [p.numeroIdentificacion, p]))
+
+  return inscs.map(insc => {
+    const part = partMap.get(insc.numeroIdentificacion) || {}
+    return {
+      ...part,
+      // Asegurar que los campos de inscripción prevalezcan
+      rutaId:             insc.rutaId,
+      estadoInscripcion:  insc.estado,
+      inscripcionId:      insc.id,
+      // Fallback si el participante no tiene nombre
+      _cedula:            insc.numeroIdentificacion,
     }
-    setFile(f)
-  }
+  })
+}
 
-  const importar = async () => {
-    if (!file) return
+export default function ParticipantesPage() {
+  const p = useParticipantes()
+  const r = useRutas()
+  const [tab, setTab] = useState('inscritos')
+
+  // ── Inscritos ──
+  const [todos, setTodos]           = useState([])   // datos completos sin filtrar
+  const [loading, setLoading]       = useState(false)
+  const [filtroRuta, setFiltroRuta] = useState('')
+
+  // Filtros de columna
+  const [fPrograma, setFPrograma]   = useState('')
+  const [fSemestre, setFSemestre]   = useState('')
+  const [fSede, setFSede]           = useState('')
+  const [fEstamento, setFEstamento] = useState('')
+
+  // Opciones únicas derivadas de los datos
+  const [optsPrograma, setOptsP]  = useState([])
+  const [optsSemestre, setOptsS]  = useState([])
+  const [optsSede, setOptsSd]     = useState([])
+  const [optsEstamento, setOptsE] = useState([])
+
+  // ── CRUD Todos ──
+  const [modal, setModal]   = useState(false)
+  const [form, setForm]     = useState(Participante.empty())
+  const [saving, setSaving] = useState(false)
+  const [importando, setI]  = useState(false)
+  const fileRef = useRef(null)
+
+  const rutaName = (id) => r.data.find(x => String(x.id) === String(id))?.nombre || `Ruta ${id}`
+
+  useEffect(() => { cargar() }, [filtroRuta])
+
+  const cargar = async () => {
     setLoading(true)
     try {
-      const formData = new FormData()
-      formData.append('archivo', file)
+      const data = await cargarInscritosConDatos(filtroRuta)
+      const enriched = data.map(d => ({
+        ...d,
+        rutaInscrita: rutaName(d.rutaId),
+        sedeCort:     sedeCort(d.sede),
+      }))
+      setTodos(enriched)
 
-      // Si es Excel, convertir a CSV primero en el navegador
-      let fileToSend = file
-      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-        toast('Convirtiendo Excel a CSV...', 'success')
-        fileToSend = await excelToCsvBlob(file)
-      }
-
-      formData.set('archivo', fileToSend, 'import.csv')
-
-      const token = http.getToken()
-      const res = await fetch('/api/participantes/importar', {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: formData
-      })
-
-      if (!res.ok) throw await res.json().catch(() => ({ mensaje: res.statusText }))
-      const data = await res.json()
-      setResultado(data)
-      setPaso(2)
-      if (data.insertados > 0 || data.actualizados > 0) onDone()
-    } catch (e) {
-      toast(e.mensaje || 'Error al importar', 'error')
-    }
+      // Derivar opciones únicas
+      setOptsP([...new Set(enriched.map(x=>x.programaAcademico).filter(Boolean))].sort())
+      setOptsS([...new Set(enriched.map(x=>String(x.semestre||'')).filter(Boolean))].sort((a,b)=>Number(a)-Number(b)))
+      setOptsSd([...new Set(enriched.map(x=>x.sedeCort).filter(Boolean))].sort())
+      setOptsE([...new Set(enriched.map(x=>x.estamento).filter(Boolean))].sort())
+    } catch {}
     setLoading(false)
   }
 
-  return (
-    <Modal open={open} onClose={handleClose} title="Importar participantes" width={540}>
-      {paso === 1 && (
-        <div>
-          {/* Instrucciones */}
-          <div style={{ background: '#f0faf0', borderRadius: 10, padding: 16, marginBottom: 20, fontSize: 13, color: '#374151', lineHeight: 1.6 }}>
-            <div style={{ fontWeight: 700, marginBottom: 8, color: '#16a34a' }}>📋 Formato esperado</div>
-            El archivo debe tener estas columnas (en cualquier orden):
-            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {['numeroIdentificacion', 'nombreCompleto', 'correoInstitucional', 'programaAcademico', 'semestre'].map(c => (
-                <span key={c} style={{ background: '#fff', border: '1px solid #bbdfbb', borderRadius: 4, padding: '2px 8px', fontSize: 12, fontFamily: 'monospace', color: '#16a34a' }}>{c}</span>
-              ))}
-            </div>
-            <div style={{ marginTop: 8, color: '#6b7280' }}>
-              Opcionales: <span style={{ fontFamily: 'monospace' }}>sede, tipoDocumento, estamento</span>
-            </div>
-            <div style={{ marginTop: 8, color: '#6b7280' }}>
-              ✅ Los registros existentes (misma cédula) se <strong>actualizan</strong> — no se duplican.
-            </div>
-          </div>
+  // Aplicar filtros de columna
+  const filtrados = todos.filter(row => {
+    if (fPrograma && row.programaAcademico !== fPrograma) return false
+    if (fSemestre && String(row.semestre) !== fSemestre) return false
+    if (fSede && row.sedeCort !== fSede) return false
+    if (fEstamento && row.estamento !== fEstamento) return false
+    return true
+  })
 
-          {/* Botón plantilla */}
-          <div style={{ marginBottom: 16 }}>
-            <button onClick={descargarPlantilla} style={{
-              padding: '7px 14px', borderRadius: 8, border: '1.5px solid #16a34a',
-              background: '#fff', color: '#16a34a', fontSize: 13, fontWeight: 600,
-              cursor: 'pointer', fontFamily: "'DM Sans', sans-serif"
-            }}>⬇ Descargar plantilla CSV</button>
-          </div>
+  const limpiarFiltros = () => { setFPrograma(''); setFSemestre(''); setFSede(''); setFEstamento('') }
 
-          {/* Selector de archivo */}
-          <div
-            onClick={() => fileRef.current?.click()}
-            onDragOver={e => e.preventDefault()}
-            onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setFile(f) }}
-            style={{
-              border: `2px dashed ${file ? '#16a34a' : '#d1d5db'}`,
-              borderRadius: 12, padding: '32px 20px', textAlign: 'center',
-              cursor: 'pointer', marginBottom: 20, transition: 'all .2s',
-              background: file ? '#f0faf0' : '#fafafa'
-            }}>
-            <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" onChange={handleFile} style={{ display: 'none' }} />
-            <div style={{ fontSize: 28, marginBottom: 8 }}>{file ? '✅' : '📁'}</div>
-            {file ? (
-              <div>
-                <div style={{ fontWeight: 700, color: '#16a34a', fontSize: 15 }}>{file.name}</div>
-                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
-                  {(file.size / 1024).toFixed(1)} KB · Click para cambiar
-                </div>
-              </div>
-            ) : (
-              <div>
-                <div style={{ fontWeight: 600, color: '#374151', fontSize: 14 }}>Arrastra tu archivo aquí o haz click</div>
-                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>CSV, Excel (.xlsx, .xls)</div>
-              </div>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <Btn variant="ghost" onClick={handleClose}>Cancelar</Btn>
-            <Btn onClick={importar} disabled={!file || loading}>
-              {loading ? 'Importando...' : `Importar${file ? ` "${file.name}"` : ''}`}
-            </Btn>
-          </div>
-        </div>
-      )}
-
-      {paso === 2 && resultado && (
-        <div>
-          {/* Resultado */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
-            {[
-              { label: 'Total procesados', value: resultado.totalRecibidos, color: '#374151' },
-              { label: 'Nuevos insertados', value: resultado.insertados, color: '#16a34a' },
-              { label: 'Actualizados', value: resultado.actualizados, color: '#0891b2' },
-              { label: 'Omitidos / Error', value: resultado.omitidos, color: resultado.omitidos > 0 ? '#dc2626' : '#9ca3af' },
-            ].map(s => (
-              <div key={s.label} style={{ background: '#f9fef9', borderRadius: 10, padding: '14px 16px', border: '1px solid #e8ece8' }}>
-                <div style={{ fontSize: 26, fontWeight: 800, color: s.color }}>{s.value}</div>
-                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{s.label}</div>
-              </div>
-            ))}
-          </div>
-
-          {resultado.errores?.length > 0 && (
-            <div style={{ background: '#fef2f2', borderRadius: 10, padding: 14, marginBottom: 16 }}>
-              <div style={{ fontWeight: 700, color: '#dc2626', marginBottom: 8, fontSize: 13 }}>
-                ⚠ {resultado.errores.length} registros con error:
-              </div>
-              <div style={{ maxHeight: 120, overflowY: 'auto' }}>
-                {resultado.errores.map((e, i) => (
-                  <div key={i} style={{ fontSize: 12, color: '#7f1d1d', fontFamily: 'monospace', marginBottom: 2 }}>{e}</div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div style={{ textAlign: 'center', marginBottom: 20 }}>
-            <div style={{ fontSize: 36 }}>{resultado.insertados + resultado.actualizados > 0 ? '🎉' : '⚠'}</div>
-            <div style={{ fontWeight: 700, fontSize: 16, color: '#111', marginTop: 8 }}>
-              {resultado.insertados + resultado.actualizados > 0
-                ? `${resultado.insertados + resultado.actualizados} participantes procesados exitosamente`
-                : 'Sin cambios en la base de datos'}
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <Btn variant="secondary" onClick={reset}>Importar otro archivo</Btn>
-            <Btn onClick={handleClose}>Cerrar</Btn>
-          </div>
-        </div>
-      )}
-    </Modal>
-  )
-}
-
-// ── Convertir Excel a CSV en el navegador con SheetJS ───────────────────
-async function excelToCsvBlob(file) {
-  const XLSX = await import('https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs')
-  const data = await file.arrayBuffer()
-  const wb = XLSX.read(data, { type: 'array' })
-  // Tomar la primera hoja
-  const ws = wb.Sheets[wb.SheetNames[0]]
-  const csv = XLSX.utils.sheet_to_csv(ws)
-  return new Blob([csv], { type: 'text/csv' })
-}
-
-// ── Página principal de Participantes ────────────────────────────────────
-export default function ParticipantesPage() {
-  const p = useParticipantes()
-  const [modal, setModal] = useState(false)
-  const [importModal, setImportModal] = useState(false)
-  const [form, setForm] = useState(Participante.empty())
-  const [search, setSearch] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  const openNew = () => { setForm(Participante.empty()); setModal(true) }
-  const openEdit = (row) => { setForm({ ...row }); setModal(true) }
-
-  const save = async () => {
-    setSaving(true)
-    try {
-      form.id ? await p.actualizar(form.id, form) : await p.registrar(form)
-      setModal(false)
-    } catch {}
-    setSaving(false)
+  const exportar = (tipo) => {
+    const data = filtrados.map(row => Object.fromEntries(EXPORT_COLS.map(c => [c.label, row[c.key] ?? ''])))
+    if (tipo === 'excel') {
+      const ws = XLSX.utils.json_to_sheet(data)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Participantes')
+      XLSX.writeFile(wb, 'participantes.xlsx')
+    } else {
+      const header = EXPORT_COLS.map(c=>c.label).join(',')
+      const rows = data.map(r => EXPORT_COLS.map(c=>`"${r[c.label]??''}"`).join(',')).join('\n')
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([header+'\n'+rows],{type:'text/csv;charset=utf-8;'}))
+      a.download = 'participantes.csv'; a.click()
+    }
   }
 
-  const doSearch = () => { search.trim() ? p.buscar(search) : p.load() }
+  // ── CRUD ──
+  const save = async () => {
+    setSaving(true)
+    try { if (form.id) await p.actualizar(form.id,form); else await p.crear(form); setModal(false); setForm(Participante.empty()); p.load() } catch {}
+    setSaving(false)
+  }
+  const remove = async (id) => { if(!confirm('¿Desactivar?')) return; await p.eliminar(id); p.load() }
+  const handleImport = async (e) => {
+    const file=e.target.files?.[0]; if(!file) return; setI(true)
+    try { await p.importar(file); p.load() } catch {}
+    setI(false); e.target.value=''
+  }
 
   return (
     <div>
-      <PageHeader
-        title="Participantes"
-        subtitle={`${p.totalItems ? p.totalItems + ' registrados' : 'Gestión de participantes'}`}
-        action={
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Btn variant="secondary" icon="plus" onClick={() => setImportModal(true)}>Importar Excel/CSV</Btn>
-            <Btn icon="plus" onClick={openNew}>Nuevo</Btn>
-          </div>
-        }
+      <PageHeader title="Participantes" subtitle="Inscritos al gimnasio y directorio">
+        <div style={{display:'flex',gap:8}}>
+          {tab==='inscritos' && <>
+            <Btn variant="ghost" size="sm" onClick={()=>exportar('csv')}>↓ CSV</Btn>
+            <Btn variant="secondary" size="sm" onClick={()=>exportar('excel')}>↓ Excel</Btn>
+          </>}
+          {tab==='todos' && <>
+            <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" onChange={handleImport} style={{display:'none'}}/>
+            <Btn variant="ghost" size="sm" onClick={()=>fileRef.current?.click()} disabled={importando}>{importando?'Importando…':'Importar CSV'}</Btn>
+            <Btn icon="plus" size="sm" onClick={()=>{setForm(Participante.empty());setModal(true)}}>Nuevo</Btn>
+          </>}
+        </div>
+      </PageHeader>
+
+      <TabBar
+        tabs={[{key:'inscritos',label:'Inscritos al gimnasio'},{key:'todos',label:'Directorio completo'}]}
+        active={tab} onChange={setTab}
       />
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-        <Input
-          placeholder="Buscar por número de identificación..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && doSearch()}
-          style={{ marginBottom: 0, flex: 1 }}
-        />
-        <Btn variant="secondary" icon="search" onClick={doSearch}>Buscar</Btn>
-        {search && <Btn variant="ghost" onClick={() => { setSearch(''); p.load() }}>Limpiar</Btn>}
-      </div>
-
-      <Table
-        columns={[
-          { key: 'numeroIdentificacion', label: 'Identificación' },
-          { key: 'nombreCompleto', label: 'Nombre' },
-          { key: 'correoInstitucional', label: 'Correo' },
-          { key: 'programaAcademico', label: 'Programa' },
-          { key: 'semestre', label: 'Sem.' },
-          { key: 'activo', label: 'Estado', render: v => <Badge text={v ? 'Activo' : 'Inactivo'} color={v ? '#16a34a' : '#dc2626'} /> }
-        ]}
-        data={p.data}
-        actions={row => (
-          <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
-            <Btn variant="ghost" size="sm" icon="edit" onClick={() => openEdit(row)} />
-            {row.activo && <Btn variant="ghost" size="sm" icon="trash" onClick={() => confirm('¿Desactivar?') && p.desactivar(row.id)} />}
+      {/* ── Tab inscritos ── */}
+      {tab==='inscritos' && (
+        <div>
+          {/* Filtro por ruta */}
+          <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+            {[{id:'',nombre:'Todas las rutas'},...r.data].map(rt=>(
+              <button key={rt.id} onClick={()=>{setFiltroRuta(String(rt.id));limpiarFiltros()}} style={{
+                padding:'7px 16px',borderRadius:10,border:'1.5px solid',cursor:'pointer',
+                fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:13,transition:'all .15s',
+                borderColor:String(filtroRuta)===String(rt.id)?'var(--gt-primary)':'var(--gt-border)',
+                background:String(filtroRuta)===String(rt.id)?'var(--gt-primary)':'#fff',
+                color:String(filtroRuta)===String(rt.id)?'#fff':'var(--gt-muted)',
+              }}>{rt.nombre?.includes('Fallo')?'🔥 ':rt.id?'🎨 ':''}{rt.nombre||'Todas las rutas'}</button>
+            ))}
           </div>
-        )}
-      />
 
-      <Pagination page={p.page} totalPages={p.totalPages} onChange={pg => p.load(pg)} />
+          {/* Filtros de columna */}
+          <Card style={{marginBottom:14,padding:'14px 16px',background:'var(--gt-bg)'}}>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:10,marginBottom:8}}>
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:'var(--gt-muted)',display:'block',marginBottom:4}}>PROGRAMA</label>
+                <select value={fPrograma} onChange={e=>setFPrograma(e.target.value)} style={{width:'100%',padding:'7px 10px',border:'1.5px solid var(--gt-border)',borderRadius:8,fontSize:13,fontFamily:"'DM Sans',sans-serif",background:'#fff',outline:'none'}}>
+                  <option value="">Todos</option>
+                  {optsPrograma.map(o=><option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:'var(--gt-muted)',display:'block',marginBottom:4}}>SEMESTRE</label>
+                <select value={fSemestre} onChange={e=>setFSemestre(e.target.value)} style={{width:'100%',padding:'7px 10px',border:'1.5px solid var(--gt-border)',borderRadius:8,fontSize:13,fontFamily:"'DM Sans',sans-serif",background:'#fff',outline:'none'}}>
+                  <option value="">Todos</option>
+                  {optsSemestre.map(o=><option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:'var(--gt-muted)',display:'block',marginBottom:4}}>SEDE</label>
+                <select value={fSede} onChange={e=>setFSede(e.target.value)} style={{width:'100%',padding:'7px 10px',border:'1.5px solid var(--gt-border)',borderRadius:8,fontSize:13,fontFamily:"'DM Sans',sans-serif",background:'#fff',outline:'none'}}>
+                  <option value="">Todas</option>
+                  {optsSede.map(o=><option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:'var(--gt-muted)',display:'block',marginBottom:4}}>ESTAMENTO</label>
+                <select value={fEstamento} onChange={e=>setFEstamento(e.target.value)} style={{width:'100%',padding:'7px 10px',border:'1.5px solid var(--gt-border)',borderRadius:8,fontSize:13,fontFamily:"'DM Sans',sans-serif",background:'#fff',outline:'none'}}>
+                  <option value="">Todos</option>
+                  {optsEstamento.map(o=><option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <button onClick={limpiarFiltros} style={{padding:'5px 12px',border:'1px solid var(--gt-border)',borderRadius:7,background:'#fff',fontSize:12,color:'var(--gt-muted)',cursor:'pointer',fontFamily:"'DM Sans',sans-serif"}}>Limpiar filtros</button>
+              <span style={{fontSize:12,color:'var(--gt-muted)'}}>{filtrados.length} resultado{filtrados.length!==1?'s':''}</span>
+            </div>
+          </Card>
 
-      {/* Modal nuevo/editar */}
-      <Modal open={modal} onClose={() => setModal(false)} title={form.id ? 'Editar' : 'Nuevo participante'}>
-        <Input label="Identificación" value={form.numeroIdentificacion} onChange={e => setForm({ ...form, numeroIdentificacion: e.target.value })} />
-        <Input label="Nombre completo" value={form.nombreCompleto} onChange={e => setForm({ ...form, nombreCompleto: e.target.value })} />
-        <Input label="Correo institucional" type="email" value={form.correoInstitucional} onChange={e => setForm({ ...form, correoInstitucional: e.target.value })} />
-        <Input label="Programa académico" value={form.programaAcademico} onChange={e => setForm({ ...form, programaAcademico: e.target.value })} />
-        <Input label="Semestre" type="number" min="1" max="10" value={form.semestre} onChange={e => setForm({ ...form, semestre: parseInt(e.target.value) || '' })} />
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
-          <Btn variant="ghost" onClick={() => setModal(false)}>Cancelar</Btn>
-          <Btn onClick={save} disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</Btn>
+          {loading ? <Spinner /> : (
+            <Table
+              columns={[
+                { key:'nombreCompleto',       label:'Nombre',       render:(v,row)=>v||(row._cedula?`Cédula: ${row._cedula}`:`ID: ${row.participanteId||row.id||'?'}`) },
+                { key:'numeroIdentificacion', label:'Identificación', muted:true },
+                { key:'programaAcademico',    label:'Programa',     render:v=>v||'—', muted:true },
+                { key:'semestre',             label:'Sem.',         render:v=>v||'—', muted:true },
+                { key:'sedeCort',             label:'Sede',         render:v=>v||'—', muted:true },
+                { key:'rutaInscrita',         label:'Ruta',         render:v=><Badge text={v} color="var(--gt-primary)"/> },
+                { key:'estadoInscripcion',    label:'Estado',       render:v=><Badge text={v||'ACTIVA'} color={v==='ACTIVA'?'#16a34a':'#9ca3af'}/> },
+              ]}
+              data={filtrados}
+            />
+          )}
+
+          {!loading && filtrados.length===0 && (
+            <div style={{textAlign:'center',padding:'40px 0',color:'var(--gt-muted)'}}>
+              <p style={{fontSize:28}}>👥</p>
+              <p style={{fontWeight:700}}>Sin inscritos para los filtros seleccionados</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab directorio ── */}
+      {tab==='todos' && (
+        <div>
+          <div style={{display:'flex',gap:8,marginBottom:16}}>
+            <Input placeholder="Buscar por cédula… (Enter)" style={{marginBottom:0,flex:1,maxWidth:300}}
+              onKeyDown={e=>e.key==='Enter'&&p.buscar(e.target.value)}
+              onChange={e=>!e.target.value&&p.load()}/>
+          </div>
+          <Table
+            columns={[
+              {key:'nombreCompleto',       label:'Nombre'},
+              {key:'numeroIdentificacion', label:'Identificación', muted:true},
+              {key:'correoInstitucional',  label:'Correo',         muted:true},
+              {key:'programaAcademico',    label:'Programa',       muted:true},
+              {key:'semestre',             label:'Sem.',           muted:true},
+              {key:'activo',               label:'Estado', render:v=><Badge text={v!==false?'Activo':'Inactivo'} color={v!==false?'#16a34a':'#9ca3af'}/>},
+            ]}
+            data={p.data}
+            actions={row=>(
+              <div style={{display:'flex',gap:6}}>
+                <Btn size="sm" variant="ghost" icon="edit" onClick={()=>{setForm(row);setModal(true)}}/>
+                <Btn size="sm" variant="danger" icon="trash" onClick={()=>remove(row.id)}/>
+              </div>
+            )}
+          />
+          <Pagination page={p.page} totalPages={p.totalPages} onChange={p.load}/>
+        </div>
+      )}
+
+      {/* Modal */}
+      <Modal open={modal} onClose={()=>setModal(false)} title={form.id?'Editar participante':'Nuevo participante'}>
+        <Input label="Nombre completo *" value={form.nombreCompleto||''} onChange={e=>setForm({...form,nombreCompleto:e.target.value})}/>
+        <Input label="Número de identificación *" value={form.numeroIdentificacion||''} onChange={e=>setForm({...form,numeroIdentificacion:e.target.value})}/>
+        <Input label="Correo institucional" type="email" value={form.correoInstitucional||''} onChange={e=>setForm({...form,correoInstitucional:e.target.value})}/>
+        <Input label="Programa académico" value={form.programaAcademico||''} onChange={e=>setForm({...form,programaAcademico:e.target.value})}/>
+        <Input label="Semestre" type="number" min="1" max="12" value={form.semestre||''} onChange={e=>setForm({...form,semestre:e.target.value})}/>
+        <Input label="Sede" value={form.sede||''} onChange={e=>setForm({...form,sede:e.target.value})}/>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:4}}>
+          <Btn variant="ghost" onClick={()=>setModal(false)}>Cancelar</Btn>
+          <Btn onClick={save} disabled={saving||!form.nombreCompleto?.trim()||!form.numeroIdentificacion?.trim()}>
+            {saving?'Guardando…':'Guardar'}
+          </Btn>
         </div>
       </Modal>
-
-      {/* Modal importar */}
-      <ImportModal
-        open={importModal}
-        onClose={() => setImportModal(false)}
-        onDone={() => p.load()}
-      />
     </div>
   )
 }

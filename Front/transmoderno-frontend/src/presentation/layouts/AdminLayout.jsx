@@ -21,8 +21,7 @@ const NAV_ADMIN = [
   ]},
   { label: 'GESTIÓN', items: [
     { to: '/admin/participantes', label: 'Participantes', icon: '👥' },
-    { to: '/admin/rutas',         label: 'Módulos',       icon: '🗺' },
-    { to: '/admin/sesiones',      label: 'Sesiones',      icon: '📅' },
+    { to: '/admin/rutas',         label: 'Rutas',       icon: '🗺' },
     { to: '/admin/inscripciones', label: 'Inscripciones', icon: '📋' },
     { to: '/admin/asistencia',    label: 'Asistencia',    icon: '✅' },
   ]},
@@ -38,7 +37,7 @@ const NAV_ADMIN = [
 
 const NAV_PSICOLOGO = [
   { label: 'PRINCIPAL', items: [
-    { to: '/admin/dashboard', label: 'Dashboard', icon: '▪' },
+    { to: '/admin/dashboard', label: 'Dashboard', icon: '🏠' },
   ]},
   { label: 'GESTIÓN', items: [
     { to: '/admin/participantes', label: 'Participantes', icon: '👥' },
@@ -56,7 +55,6 @@ const NAV_ENCARGADO = [
   ]},
   { label: 'GESTIÓN', items: [
     { to: '/admin/participantes', label: 'Participantes', icon: '👥' },
-    { to: '/admin/sesiones',      label: 'Sesiones',      icon: '📅' },
     { to: '/admin/asistencia',    label: 'Asistencia',    icon: '✅' },
   ]},
   { label: 'EVALUACIÓN', items: [

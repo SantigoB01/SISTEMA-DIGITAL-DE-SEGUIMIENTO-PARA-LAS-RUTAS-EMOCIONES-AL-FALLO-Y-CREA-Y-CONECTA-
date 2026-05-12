@@ -4,6 +4,7 @@ import { useToast } from '../../../application/context/ToastContext'
 import { useAsistencia, useFichas, usePreguntas } from '../../../application/hooks'
 import { inscripcionRepo, rutaRepo, sesionRepo, alertaRepo } from '../../../infrastructure/repositories'
 import { Card, Btn, Badge, TabBar } from '../../components/ui/index'
+import FichaForm from '../../components/FichaForm'
 import Icon from '../../components/ui/Icon'
 
 const TIPS = [
@@ -31,6 +32,15 @@ const EMOJIS = [
   { key: 'genial',  emoji: '😄', label: 'Genial'  },
   { key: 'pleno',   emoji: '🤩', label: 'Pleno'   },
 ]
+
+
+const EMOJI_MSGS = {
+  mal:     { titulo: 'Gracias por compartirlo',       texto: 'Está bien no estar bien. Si necesitas apoyo, usa el botón de levantar la mano.', color: '#FEE2E2', icon: '🤗' },
+  regular: { titulo: 'Lo notamos',                    texto: 'A veces los días son así. Lo importante es que estás aquí. Ánimo.', color: '#FEF3DC', icon: '💛' },
+  bien:    { titulo: '¡Nos alegra escucharlo!',        texto: 'Sigue así. Tu bienestar importa y se nota.', color: '#E8F5ED', icon: '😊' },
+  genial:  { titulo: '¡Excelente!',                   texto: 'Esa energía es contagiosa. ¡Aprovecha el día al máximo!', color: '#E0F2FE', icon: '🌟' },
+  pleno:   { titulo: '¡Qué bueno saberlo!',           texto: 'Comparte esa plenitud con quienes te rodean. Eres una motivación.', color: '#EDE9FE', icon: '✨' },
+}
 
 const initials = (name = '') =>
   name.split(' ').filter(Boolean).slice(0, 2).map(n => n[0].toUpperCase()).join('')
@@ -99,12 +109,17 @@ export default function StudentHomePage() {
       setInscripciones(activas)
       setRutas(rs)
       setSesionActiva(null)
+      // Cargar sesiones activas de TODAS las rutas inscritas
+      const sesActivas = []
       for (const insc of activas) {
         try {
           const s = await sesionRepo.findActiva(insc.rutaId)
-          if (s && s.id) { setSesionActiva({ ...s, rutaId: insc.rutaId, inscripcionId: insc.id }); break }
+          if (s && s.id) sesActivas.push({ ...s, rutaId: insc.rutaId, inscripcionId: insc.id })
         } catch {}
       }
+      setSesionesActivas(sesActivas)
+      // Auto-seleccionar si solo hay una
+      setSesionActiva(sesActivas.length === 1 ? sesActivas[0] : null)
     } catch {}
   }
 
@@ -203,11 +218,11 @@ export default function StudentHomePage() {
         {tab === 'home' && (
           <div>
             {/* Como te sientes */}
-            <div style={{ background: '#fff', borderRadius: '0 0 16px 16px', padding: '16px 16px 18px', marginBottom: 16, boxShadow: '0 2px 8px rgba(0,0,0,.06)' }}>
+            <div style={{ background: '#fff', borderRadius: '0 0 16px 16px', padding: '16px 16px 18px', marginBottom: emojiSel ? 10 : 16, boxShadow: '0 2px 8px rgba(0,0,0,.06)' }}>
               <p style={{ fontSize: 13, fontWeight: 700, color: '#627066', margin: '0 0 12px' }}>Como te sientes hoy?</p>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 {EMOJIS.map(e => (
-                  <button key={e.key} onClick={() => setEmojiSel(e.key)} style={{
+                  <button key={e.key} onClick={() => setEmojiSel(emojiSel === e.key ? null : e.key)} style={{
                     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
                     background: emojiSel === e.key ? '#E8F5ED' : 'transparent',
                     border: emojiSel === e.key ? '2px solid #0D5C2F' : '2px solid transparent',
@@ -219,6 +234,21 @@ export default function StudentHomePage() {
                 ))}
               </div>
             </div>
+
+            {/* Mensaje feedback del emoji */}
+            {emojiSel && EMOJI_MSGS[emojiSel] && (() => {
+              const msg = EMOJI_MSGS[emojiSel]
+              return (
+                <div style={{ background: msg.color, borderRadius: 14, padding: '14px 16px', marginBottom: 16, display: 'flex', gap: 12, alignItems: 'flex-start', animation: 'fadeUp .25s ease', border: '1px solid rgba(0,0,0,.06)' }}>
+                  <span style={{ fontSize: 26, flexShrink: 0 }}>{msg.icon}</span>
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: 14, color: '#1A2318', margin: '0 0 3px' }}>{msg.titulo}</p>
+                    <p style={{ fontSize: 13, color: '#374151', margin: 0, lineHeight: 1.5 }}>{msg.texto}</p>
+                  </div>
+                  <button onClick={() => setEmojiSel(null)} style={{ background: 'none', border: 'none', color: '#9CA3AF', fontSize: 18, cursor: 'pointer', marginLeft: 'auto', flexShrink: 0, lineHeight: 1 }}>✕</button>
+                </div>
+              )
+            })()}
 
             {/* Accesos rapidos */}
             <div style={{ display: 'flex', gap: 10, overflowX: 'auto', padding: '4px 0 14px', scrollbarWidth: 'none' }}>
@@ -280,18 +310,29 @@ export default function StudentHomePage() {
 
             {/* Tarjetas existentes */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <Card onClick={sesionActiva ? registrarAsistencia : undefined} style={{ cursor: sesionActiva ? 'pointer' : 'default', opacity: sesionActiva ? 1 : .5 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: 12, background: '#f0faf0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon name="check" size={22} color="#16a34a" />
+              {sesionActiva ? (
+                <div onClick={registrarAsistencia} style={{
+                  background:'linear-gradient(135deg,#0D5C2F,#16A34A)', borderRadius:14,
+                  padding:'16px 18px', cursor:'pointer', boxShadow:'0 4px 14px rgba(13,92,47,.25)',
+                  display:'flex', alignItems:'center', gap:14, transition:'opacity .15s',
+                }} onMouseEnter={e=>e.currentTarget.style.opacity='.88'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+                  <div style={{ width:44,height:44,borderRadius:12,background:'rgba(255,255,255,.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0 }}>✅</div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontWeight:800,fontSize:15,color:'#fff' }}>Registrar asistencia</div>
+                    <div style={{ fontSize:12,color:'rgba(255,255,255,.75)',marginTop:2 }}>{sesionActiva.nombre}{sesionActiva.encargado ? ` · ${sesionActiva.encargado}` : ''}</div>
+                    {sesionActiva.horaInicio && <div style={{ fontSize:11,color:'rgba(255,255,255,.6)',marginTop:1 }}>🕐 {sesionActiva.horaInicio}{sesionActiva.lugar ? ` · 📍 ${sesionActiva.lugar}` : ''}</div>}
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 15, color: '#111' }}>Registrar asistencia</div>
-                    <div style={{ fontSize: 13, color: '#6b7280' }}>{sesionActiva ? `Sesion: ${sesionActiva.nombre}` : 'No hay sesion activa en este momento'}</div>
-                  </div>
-                  {loading && <span style={{ fontSize: 12, color: '#16a34a' }}>Registrando...</span>}
+                  {loading ? <span style={{ fontSize:12,color:'rgba(255,255,255,.8)' }}>Registrando…</span> : <span style={{ color:'rgba(255,255,255,.7)',fontSize:20 }}>›</span>}
                 </div>
-              </Card>
+              ) : (
+                <div style={{ background:'#fff',borderRadius:14,padding:'14px 18px',border:'1.5px dashed #D4E2D8',display:'flex',alignItems:'center',gap:14,opacity:.7 }}>
+                  <div style={{ width:44,height:44,borderRadius:12,background:'#F0F4F1',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0 }}>📭</div>
+                  <div>
+                    <div style={{ fontWeight:700,fontSize:14,color:'#374151' }}>Sin sesión activa</div>
+                    <div style={{ fontSize:12,color:'#9CA3AF' }}>Cuando haya una sesión programada aparecerá aquí</div>
+                  </div>
+                </div>
+              )}
 
               <Card onClick={() => setTab('fichas')} style={{ cursor: 'pointer' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -416,7 +457,8 @@ export default function StudentHomePage() {
             {sesionActiva ? (
               <div style={{ background: '#E8F5ED', borderRadius: 16, padding: 20, border: '1px solid #D4E2D8' }}>
                 <p style={{ fontSize: 11, fontWeight: 700, color: '#0D5C2F', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 6 }}>Sesion activa</p>
-                <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1A2318', marginBottom: 10 }}>{sesionActiva.nombre}</h2>
+                <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1A2318', marginBottom: 4 }}>{sesionActiva.nombre}</h2>
+                {sesionActiva.encargado && <p style={{ fontSize:13,color:'var(--gt-muted)',marginBottom:8 }}>👤 {sesionActiva.encargado}</p>}
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
                   {sesionActiva.fecha && <span style={{ fontSize: 13, color: '#627066' }}>📅 {sesionActiva.fecha}</span>}
                   {sesionActiva.horaInicio && <span style={{ fontSize: 13, color: '#627066' }}>🕐 {sesionActiva.horaInicio}{sesionActiva.horaFin ? ` - ${sesionActiva.horaFin}` : ''}</span>}
@@ -461,41 +503,80 @@ export default function StudentHomePage() {
           </div>
         )}
 
-        {/* ── FICHAS (existente) ────────────────────────────────────────────── */}
+        {/* ── FICHAS ────────────────────────────────────────────────────────── */}
         {tab === 'fichas' && (
           <div style={{ paddingTop: 16 }}>
             <BackBtn onBack={() => { setTab('home'); setSelectedInscripcion(null); setRespuestas([]) }} />
             <h3 style={{ margin: '12px 0 16px', fontSize: 20, fontWeight: 800 }}>Fichas de bienestar</h3>
+
             {!selectedInscripcion ? (
               <div>
-                <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 16 }}>Selecciona la inscripcion:</p>
+                <p style={{ fontSize: 13, color: '#627066', marginBottom: 16 }}>Selecciona el módulo para diligenciar la ficha:</p>
                 {inscripciones.map(i => (
-                  <Card key={i.id} onClick={() => selectInscripcionForFicha(i)} style={{ cursor: 'pointer', marginBottom: 8 }}>
-                    <div style={{ fontWeight: 600, color: '#111' }}>{rutaName(i.rutaId)}</div>
-                    <div style={{ fontSize: 12, color: '#6b7280' }}>Inscripcion #{i.id}</div>
-                  </Card>
+                  <div key={i.id} onClick={() => selectInscripcionForFicha(i)} style={{
+                    background: '#fff', borderRadius: 14, padding: '16px 18px', marginBottom: 10,
+                    border: '1px solid #D4E2D8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12,
+                    transition: 'box-shadow .15s',
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 14px rgba(0,0,0,.08)' }}
+                    onMouseLeave={e => { e.currentTarget.style.boxShadow = '' }}>
+                    <span style={{ fontSize: 24 }}>{rutaName(i.rutaId)?.includes('Fallo') ? '🔥' : '🎨'}</span>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: '#1A2318' }}>{rutaName(i.rutaId)}</div>
+                      <div style={{ fontSize: 12, color: '#627066' }}>Inscripción #{i.id}</div>
+                    </div>
+                    <span style={{ marginLeft: 'auto', fontSize: 20, color: '#D4E2D8' }}>›</span>
+                  </div>
                 ))}
-                {inscripciones.length === 0 && <p style={{ color: '#9ca3af', fontSize: 14 }}>No tienes inscripciones activas</p>}
+                {inscripciones.length === 0 && (
+                  <p style={{ color: '#9CA3AF', fontSize: 14, textAlign: 'center', padding: '24px 0' }}>
+                    No tienes inscripciones activas
+                  </p>
+                )}
               </div>
             ) : (
               <div>
-                <div style={{ marginBottom: 16 }}><Badge text={rutaName(selectedInscripcion.rutaId)} color="#16a34a" /></div>
-                <TabBar tabs={[{ key: 'pre', label: 'Ficha PRE' }, { key: 'post', label: 'Ficha POST' }]} active={fichaTab} onChange={setFichaTab} />
-                {preguntas.data.filter(p => p.activa).map(p => (
-                  <Card key={p.id} style={{ marginBottom: 12 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 10 }}>{p.orden}. {p.texto}</div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      {[1, 2, 3, 4, 5].map(v => {
-                        const sel = respuestas.find(r => r.preguntaId === p.id)?.valor === v
-                        return <button key={v} onClick={() => setRespuesta(p.id, v)} style={{ width: 44, height: 44, borderRadius: 12, fontWeight: 700, fontSize: 16, border: sel ? '2px solid #16a34a' : '1.5px solid #d1d5db', background: sel ? '#16a34a' : '#fff', color: sel ? '#fff' : '#374151', transition: 'all .15s' }}>{v}</button>
-                      })}
-                    </div>
-                  </Card>
-                ))}
-                {preguntas.data.filter(p => p.activa).length > 0 && (
-                  <Btn onClick={fichaTab === 'pre' ? submitFichaPre : submitFichaPost} disabled={loading} style={{ width: '100%' }}>
-                    {loading ? 'Enviando...' : `Enviar ficha ${fichaTab.toUpperCase()}`}
-                  </Btn>
+                {/* Header modulo */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                  <button onClick={() => { setSelectedInscripcion(null); setRespuestas([]) }} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#627066' }}>←</button>
+                  <span style={{ fontSize: 18 }}>{rutaName(selectedInscripcion.rutaId)?.includes('Fallo') ? '🔥' : '🎨'}</span>
+                  <span style={{ fontWeight: 700, fontSize: 15 }}>{rutaName(selectedInscripcion.rutaId)}</span>
+                </div>
+
+                {/* PRE / POST tabs */}
+                <TabBar
+                  tabs={[{ key: 'pre', label: 'Ficha PRE-test' }, { key: 'post', label: 'Ficha POST-test' }]}
+                  active={fichaTab}
+                  onChange={t => { setFichaTab(t); setRespuestas([]) }}
+                />
+
+                <p style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 16 }}>
+                  {fichaTab === 'pre'
+                    ? 'Diligencia este formulario al inicio del programa.'
+                    : 'Diligencia este formulario al finalizar el programa.'}
+                </p>
+
+                {/* Formulario con tipos visuales */}
+                <FichaForm
+                  preguntas={preguntas.data}
+                  respuestas={respuestas}
+                  setRespuesta={(pregId, val) => setRespuesta(pregId, val)}
+                />
+
+                {preguntas.data.filter(p => p.activa !== false).length > 0 && (
+                  <div style={{ marginTop: 20 }}>
+                    <button
+                      onClick={fichaTab === 'pre' ? submitFichaPre : submitFichaPost}
+                      disabled={loading}
+                      style={{
+                        width: '100%', padding: '14px', background: '#0D5C2F', color: '#fff',
+                        border: 'none', borderRadius: 12, fontWeight: 800, fontSize: 15,
+                        cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? .7 : 1,
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}>
+                      {loading ? 'Enviando...' : `Enviar ficha ${fichaTab === 'pre' ? 'PRE-test' : 'POST-test'}`}
+                    </button>
+                  </div>
                 )}
               </div>
             )}
