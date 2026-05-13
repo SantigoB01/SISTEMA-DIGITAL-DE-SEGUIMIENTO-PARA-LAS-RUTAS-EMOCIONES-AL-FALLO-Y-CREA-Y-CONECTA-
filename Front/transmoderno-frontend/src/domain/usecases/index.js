@@ -18,6 +18,7 @@ export const sesionUseCases = (repo) => ({
   listarPorRuta: (rutaId, page, size) => repo.findByRuta(rutaId, page, size),
   obtenerActiva: (rutaId) => repo.findActiva(rutaId),
   crear: (data) => repo.save(data),
+  actualizar: (id, data) => repo.update(id, data),
   eliminar: (id) => repo.remove(id)
 })
 

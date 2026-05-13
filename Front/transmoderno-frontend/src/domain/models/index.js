@@ -7,7 +7,7 @@ export const Ruta = {
 }
 
 export const Sesion = {
-  empty: () => ({ id: null, rutaId: null, nombre: '', fecha: '', horaInicio: '', horaFin: '' })
+  empty: () => ({ id: null, rutaId: null, nombre: '', fecha: '', horaInicio: '', horaFin: '', lugar: '', encargado: '' })
 }
 
 export const Inscripcion = {

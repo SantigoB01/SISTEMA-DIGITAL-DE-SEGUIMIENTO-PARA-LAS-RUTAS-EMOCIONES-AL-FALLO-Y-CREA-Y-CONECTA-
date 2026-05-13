@@ -56,6 +56,8 @@ const NAV_ENCARGADO = [
   { label: 'GESTIÓN', items: [
     { to: '/admin/participantes', label: 'Participantes', icon: '👥' },
     { to: '/admin/asistencia',    label: 'Asistencia',    icon: '✅' },
+    { to: '/admin/rutas',         label: 'Rutas',       icon: '🗺' },
+    { to: '/admin/inscripciones', label: 'Inscripciones', icon: '📋' },
   ]},
   { label: 'EVALUACIÓN', items: [
     { to: '/admin/alertas',  label: 'Alertas',  icon: '🔔', badge: true },

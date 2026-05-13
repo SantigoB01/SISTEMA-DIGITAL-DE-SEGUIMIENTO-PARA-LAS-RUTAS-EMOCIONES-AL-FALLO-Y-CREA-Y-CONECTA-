@@ -52,3 +52,10 @@ body {
 
 .page-enter { animation: .25s ease-out fadeUp; }
 .slide-in   { animation: .2s ease-out slideIn; }
+
+/* ── Print / PDF ── */
+@media print {
+  aside, .no-print, nav, header { display: none !important; }
+  .print-chart { break-inside: avoid; }
+  body { background: white; }
+}

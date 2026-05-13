@@ -20,7 +20,9 @@ export const sesionRepo = {
   findByRuta: (rId, p = 0, s = 10) => http.get(`/sesiones/ruta/${rId}?page=${p}&size=${s}`),
   findActiva: (rId) => http.get(`/sesiones/activa/${rId}`),
   save: (d) => http.post('/sesiones', d),
-  remove: (id) => http.del(`/sesiones/${id}`)
+  update: (id, d) => http.put(`/sesiones/${id}`, d),
+  remove: (id) => http.del(`/sesiones/${id}`),
+  countByRuta: (rId) => http.get(`/inscripciones?rutaId=${rId}&page=0&size=1`).catch(() => ({ totalElementos: 0 }))
 }
 
 export const inscripcionRepo = {

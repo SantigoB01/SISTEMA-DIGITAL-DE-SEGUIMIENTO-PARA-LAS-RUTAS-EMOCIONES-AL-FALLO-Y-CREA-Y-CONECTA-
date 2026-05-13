@@ -12,7 +12,10 @@ export function useAction() {
       if (okMsg) toast(okMsg)
       return r
     } catch (e) {
-      toast(e.mensaje || 'Error inesperado', 'error')
+      // Errores de servidor (5xx) o red: no mostrar toast, fallar silenciosamente
+      if (e?.serverError || e?.status >= 500) throw e
+      // Errores de negocio (4xx): mostrar mensaje
+      if (e?.mensaje) toast(e.mensaje, 'error')
       throw e
     }
   }, [toast])
@@ -80,6 +83,7 @@ export function useSesiones() {
     data, page, totalPages, loadByRuta,
     obtenerActiva: (rId) => run(() => cases.obtenerActiva(rId)),
     crear: (d) => run(() => cases.crear(d), 'Sesión creada'),
+    actualizar: (id, d) => run(() => cases.actualizar(id, d), 'Sesión actualizada'),
     eliminar: (id) => run(() => cases.eliminar(id), 'Sesión eliminada')
   }
 }
